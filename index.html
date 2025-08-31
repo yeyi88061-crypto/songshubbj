@@ -94,7 +94,12 @@
     .user-message .message-bubble { background-color: var(--user-bubble-color); color: white; border-bottom-right-radius: 5px; }
     .user-message .message-status { order: 0; align-self: flex-end; margin-right: 4px; margin-bottom: 5px; }
     .ai-message { align-self: flex-start; flex-direction: row; }
-    .ai-message .message-bubble { background-color: var(--ai-bubble-color); color: #000; border-bottom-left-radius: 5px; }
+       .ai-message .message-bubble {
+        background-color: var(--ai-bubble-color);
+        color: #000;
+        border-bottom-left-radius: 5px;
+        padding: 6px 14px; /* 修改：减小了上下的内边距 */
+    }
     .status-ticks { width: 16px; height: 16px; position: relative; color: var(--status-tick-color); }
     .status-ticks.delivered::before { content: '✓'; position: absolute; font-size: 16px; font-weight: bold; line-height: 1; right: 0; }
     .status-ticks.read::before { content: '✓'; position: absolute; font-size: 16px; font-weight: bold; line-height: 1; right: 5px; }
@@ -329,28 +334,40 @@
         display: flex; /* or block, depending on the element */
     }
     
-    /* 消息删除菜单 */
+    /* 消息编辑/删除菜单 */
     #message-context-menu {
         position: absolute;
-        background-color: var(--card-color);
+        background-color: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
         border: 1px solid var(--border-color);
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border-radius: 16px; /* 更圆润的角 */
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         z-index: 150;
-        padding: 5px;
+        padding: 4px; /* 缩小内边距 */
+        display: flex; /* 让按钮横向排列 */
+        gap: 4px; /* 按钮间距 */
     }
     #message-context-menu button {
         background: none;
         border: none;
-        padding: 8px 15px;
-        width: 100%;
-        text-align: left;
+        padding: 6px 10px; /* 缩小按钮内边距 */
+        text-align: center;
         cursor: pointer;
-        font-size: 15px;
+        font-size: 13px; /* 缩小字体 */
+        border-radius: 12px;
+        transition: background-color 0.2s;
+    }
+    /* 编辑按钮样式 */
+    #edit-message-btn {
+        color: var(--user-bubble-color);
+    }
+    /* 删除按钮样式 */
+    #delete-message-btn {
         color: var(--danger-color);
     }
     #message-context-menu button:hover {
-        background-color: var(--bg-color);
+        background-color: rgba(0,0,0,0.05);
     }
 
     /* 图标更换 */
@@ -728,6 +745,7 @@
 
     <!-- 消息右键菜单 -->
     <div id="message-context-menu" class="hidden">
+        <button id="edit-message-btn">编辑</button>
         <button id="delete-message-btn">删除</button>
     </div>
 
@@ -1223,6 +1241,32 @@ JSON结构如下:
         messageContextMenu.style.top = `${y}px`;
         messageContextMenu.style.left = `${x}px`;
     }
+    function showMessageContextMenu(event, messageId) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        // 检查这条消息是否是用户消息
+        const isUserMessage = conversationHistory.some(m => m.id === messageId && m.role === 'user') || 
+                              stagedUserMessages.some(m => m.id === messageId && m.role === 'user');
+        
+        // 如果不是用户消息，则不显示菜单
+        if (!isUserMessage) {
+            messageContextMenu.classList.add('hidden');
+            return;
+        }
+
+        contextMenuTargetMessageId = messageId;
+        messageContextMenu.classList.remove('hidden');
+
+        const targetBubble = event.currentTarget.querySelector('.message-bubble');
+        if (!targetBubble) return;
+
+        const rect = targetBubble.getBoundingClientRect();
+        
+        // 将菜单定位在气泡的左下角
+        messageContextMenu.style.top = `${rect.bottom + 5}px`;
+        messageContextMenu.style.left = `${rect.left}px`;
+    }
     function deleteSelectedMessage() {
         if (!contextMenuTargetMessageId) return;
         let found = false;
@@ -1239,6 +1283,38 @@ JSON结构如下:
             }
         }
         if (found) renderConversation();
+        messageContextMenu.classList.add('hidden');
+        contextMenuTargetMessageId = null;
+    }
+        function editUserMessage() {
+        if (!contextMenuTargetMessageId) return;
+
+        let message, messageArray;
+        let index = stagedUserMessages.findIndex(m => m.id === contextMenuTargetMessageId);
+        if (index > -1) {
+            message = stagedUserMessages[index];
+            messageArray = stagedUserMessages;
+        } else {
+            index = conversationHistory.findIndex(m => m.id === contextMenuTargetMessageId);
+            if (index > -1) {
+                message = conversationHistory[index];
+                messageArray = conversationHistory;
+            }
+        }
+
+        if (message) {
+            // 弹出输入框，并填充旧内容
+            const newContent = prompt("编辑你的消息:", message.content);
+            // 如果用户输入了新内容并且没有取消
+            if (newContent !== null) {
+                message.content = newContent.trim();
+                if (messageArray === conversationHistory) {
+                    saveConversationHistory();
+                }
+                renderConversation();
+            }
+        }
+        
         messageContextMenu.classList.add('hidden');
         contextMenuTargetMessageId = null;
     }
@@ -2035,7 +2111,8 @@ ${personaDetails}
         chatActionsMenu.addEventListener('click', e => e.stopPropagation());
         inputActionsPopup.addEventListener('click', e => e.stopPropagation());
         messageContextMenu.addEventListener('click', e => e.stopPropagation());
-        getEl('delete-message-btn').addEventListener('click', deleteSelectedMessage);
+        getEl('edit-message-btn').onclick = editUserMessage; // 新增编辑按钮的点击事件
+        getEl('delete-message-btn').onclick = deleteSelectedMessage;
         iconUploadInput.addEventListener('change', handleIconUpload);
         skitKeywordCancelBtn.addEventListener('click', () => skitOverlay.classList.add('hidden'));
         skitKeywordStartBtn.addEventListener('click', () => startSkit(skitKeywordInput.value));
